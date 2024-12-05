@@ -1,1 +1,2 @@
-RAG Test
+- SDGP Implementation.ipynb - Contains the RAG chatbot code and NLP tryout. Can directly try in Colab
+- main.py - The main file which contains the interface for RAG chatbot - Voice and Text
