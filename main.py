@@ -13,8 +13,8 @@ import openai
 from groq import Groq
 
 # Securely manage API keys
-openai.api_key = "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"
-client = Groq(api_key="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")
+openai.api_key = st.secrets["general"]["OPENAI_API_KEY"]
+client = Groq(api_key=st.secrets["general"]["GROQ_API_KEY"])
 
 # Step 1: Extract text from PDF
 def extract_text_from_pdf(pdf_file):
