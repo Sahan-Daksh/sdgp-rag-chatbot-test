@@ -1,7 +1,6 @@
 import os
 import streamlit as st
-import librosa
-import soundfile as sf
+import tempfile
 from sentence_transformers import SentenceTransformer
 import faiss
 from whisper import load_model
@@ -9,7 +8,6 @@ from groq import Groq
 import PyPDF2
 
 # Constants for prebuilt assets
-BUILT_IN_AUDIO = "./aud3.mp3"
 BUILT_IN_PDF = "./Bash.pdf"
 
 # Streamlit app setup
@@ -17,11 +15,35 @@ st.title("Smart Assistant: Voice & Text-Based Queries")
 st.sidebar.title("Options")
 
 # API Key for Groq
-GROQ_API_KEY = "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"      # Replace with your Groq API key
+GROQ_API_KEY = "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"  # Replace with your Groq API key
 client = Groq(api_key=GROQ_API_KEY)
 
 # Add a toggle switch to choose between Voice and Text mode
 query_mode = st.sidebar.radio("Select Query Mode:", ["Voice Input", "Text Input"])
+
+# Load Whisper model
+@st.cache_resource
+def load_whisper_model():
+    try:
+        model = load_model("base")  # Load the base Whisper model
+        return model
+    except Exception as e:
+        st.error(f"Error loading Whisper model: {e}")
+        return None
+
+whisper_model = load_whisper_model()
+
+# Load embedding model
+@st.cache_resource
+def load_embed_model():
+    try:
+        model = SentenceTransformer("all-MiniLM-L6-v2")  # Load the sentence transformer model
+        return model
+    except Exception as e:
+        st.error(f"Error loading embedding model: {e}")
+        return None
+
+embed_model = load_embed_model()  # Load model for embedding text
 
 # Cache PDF preprocessing (done once)
 @st.cache_data
@@ -38,27 +60,13 @@ def preprocess_pdf_once(pdf_path):
 
     # Build index and embeddings
     text_chunks = [text[i:i + 300] for i in range(0, len(text), 300)]  # Split into chunks
-    model = SentenceTransformer("all-MiniLM-L6-v2")
-    embeddings = model.encode(text_chunks)
+    embeddings = embed_model.encode(text_chunks)
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(embeddings)
-    return text_chunks, index, model
+    return text_chunks, index
 
-# Audio preprocessing for Whisper
-def preprocess_audio(input_path, target_sample_rate=16000):
-    try:
-        y, original_sr = librosa.load(input_path, sr=None)
-        if y.ndim > 1:
-            y = librosa.to_mono(y)
-        y_trimmed, _ = librosa.effects.trim(y, top_db=20)
-        y_resampled = librosa.resample(y_trimmed, orig_sr=original_sr, target_sr=target_sample_rate)
-        y_normalized = librosa.util.normalize(y_resampled)
-        temp_output = input_path.replace(".mp3", "_preprocessed.wav")
-        sf.write(temp_output, y_normalized, target_sample_rate)
-        return temp_output
-    except Exception as e:
-        st.error(f"Audio preprocessing error: {e}")
-        return None
+# Preprocess the built-in PDF (done for both Text and Voice modes)
+text_chunks, faiss_index = preprocess_pdf_once(BUILT_IN_PDF)  # Now available globally
 
 # Query handler using Groq with Llama
 def query_handler_groq(query, context):
@@ -79,54 +87,49 @@ def query_handler_groq(query, context):
         st.error(f"Error querying Groq Llama model: {e}")
         return None
 
-# Load Whisper model
-def load_whisper_model():
-    try:
-        model = load_model("base")  # Load the base Whisper model
-        return model
-    except Exception as e:
-        st.error(f"Error loading Whisper model: {e}")
-        return None
-
-whisper_model = load_whisper_model()
-
-# PDF preprocessing (done once)
-if query_mode == "Text Input":
-    st.info("Text mode selected. Using built-in PDF.")
-    with st.spinner("Loading and preprocessing PDF..."):
-        text_chunks, faiss_index, embed_model = preprocess_pdf_once(BUILT_IN_PDF)
-        st.success("PDF preprocessed successfully!")
-
 # Voice input mode
 if query_mode == "Voice Input":
-    st.info("Voice mode selected. Using built-in audio.")
-    st.audio(BUILT_IN_AUDIO, format="audio/mp3")
-    if st.button("Transcribe and Query"):
-        with st.spinner("Processing audio..."):
-            preprocessed_audio = preprocess_audio(BUILT_IN_AUDIO)
-            if preprocessed_audio:
-                try:
-                    # Use Whisper for transcription
-                    result = whisper_model.transcribe(preprocessed_audio)
-                    transcription_text = result.get("text", "No transcription available")
-                    st.success("Audio transcribed successfully!")
-                    st.text("Transcription:")
-                    st.write(transcription_text)
+    # Audio File Input
+    st.header("Upload an Audio File")
+    audio_file = st.file_uploader("Upload an audio file (WAV, MP3, etc.)", type=["wav", "mp3"])
 
-                    # Input transcription text as a query
-                    query = st.text_input("Ask a question based on the transcription:")
-                    if st.button("Query with Transcription"):
-                        with st.spinner("Querying AI..."):
-                            response = query_handler_groq(query, context=transcription_text)
-                            st.write("Assistant Response:")
-                            st.write(response)
-                except Exception as e:
-                    st.error(f"Error during audio transcription or querying: {e}")
+    if audio_file:
+        # Save the uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
+            temp_audio.write(audio_file.read())
+            audio_path = temp_audio.name
+        
+        st.audio(audio_path, format="audio/wav")
+        
+        # Transcribe audio using Whisper
+        with st.spinner("Processing audio and transcribing..."):
+            try:
+                result = whisper_model.transcribe(audio_path)
+                transcription_text = result['text'] if 'text' in result else "No transcription available"
+                st.success("Transcription completed!")
+                st.text("Transcription:")
+                st.write(transcription_text)
 
-                # Cleanup temp files
-                os.remove(preprocessed_audio)
+                # Use transcription as a query
+                with st.spinner("Retrieving context and querying assistant..."):
+                    # Create the embedding of the transcribed text to use with FAISS
+                    query_embedding = embed_model.encode([transcription_text])
+                    distances, indices = faiss_index.search(query_embedding, k=3)  # Adjust k as necessary
+                    retrieved_chunks = [text_chunks[idx] for idx in indices[0]]
+                    context = " ".join(retrieved_chunks)
 
-# Text input query
+                    # Query with context
+                    response = query_handler_groq(transcription_text, context)  # Correct function
+                    st.header("Assistant Response")
+                    st.write(response)
+
+            except Exception as e:
+                st.error(f"Error during transcription or query: {e}")
+            finally:
+                # Cleanup temporary file
+                os.remove(audio_path)
+
+# Text input mode
 if query_mode == "Text Input":
     user_query = st.text_input("Enter your query:")
     if st.button("Query"):
