@@ -6,3 +6,7 @@ faiss-cpu
 numpy
 groq
 whisper
+tempfile
+pydub
+gtts
+torchaudio

@@ -5,11 +5,11 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 import openai
-# import whisper
-# import tempfile
-# from pydub import AudioSegment
-# from gtts import gTTS
-# import torchaudio
+import whisper
+import tempfile
+from pydub import AudioSegment
+from gtts import gTTS
+import torchaudio
 from groq import Groq
 
 # Securely manage API keys
@@ -74,36 +74,36 @@ def query_llm(query, context):
         return ""
 
 # Audio transcription logic
-# def transcribe_audio(audio_file):
-#     try:
-#         model = whisper.load_model("base")
-#         transcription = model.transcribe(audio_file)
-#         return transcription["text"]
-#     except Exception as e:
-#         st.error("Error transcribing audio: " + str(e))
-#         return ""
+def transcribe_audio(audio_file):
+    try:
+        model = whisper.load_model("base")
+        transcription = model.transcribe(audio_file)
+        return transcription["text"]
+    except Exception as e:
+        st.error("Error transcribing audio: " + str(e))
+        return ""
 
 # Generate speech from text using uploaded voice clip
-# def generate_speech_from_text(text, uploaded_voice_clip):
-#     try:
-#         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_clip:
-#             temp_clip.write(uploaded_voice_clip.read())
-#             temp_clip_path = temp_clip.name
+def generate_speech_from_text(text, uploaded_voice_clip):
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_clip:
+            temp_clip.write(uploaded_voice_clip.read())
+            temp_clip_path = temp_clip.name
 
-#         voice_clip = AudioSegment.from_file(temp_clip_path)
-#         tts = gTTS(text=text, lang="en")
-#         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_tts:
-#             tts.save(temp_tts.name)
-#             tts_audio = AudioSegment.from_file(temp_tts.name)
+        voice_clip = AudioSegment.from_file(temp_clip_path)
+        tts = gTTS(text=text, lang="en")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_tts:
+            tts.save(temp_tts.name)
+            tts_audio = AudioSegment.from_file(temp_tts.name)
 
 #         # Combine TTS with the voice clip properties
-#         final_audio = tts_audio.set_frame_rate(voice_clip.frame_rate).set_channels(voice_clip.channels)
-#         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as final_output:
-#             final_audio.export(final_output.name, format="mp3")
-#             return final_output.name
-#     except Exception as e:
-#         st.error("Error generating speech: " + str(e))
-#         return ""
+        final_audio = tts_audio.set_frame_rate(voice_clip.frame_rate).set_channels(voice_clip.channels)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as final_output:
+            final_audio.export(final_output.name, format="mp3")
+            return final_output.name
+    except Exception as e:
+        st.error("Error generating speech: " + str(e))
+        return ""
 
 # Main Streamlit app
 def main():
@@ -146,9 +146,9 @@ def main():
                         st.markdown(f"**Assistant:** {response}")
 
                         # Generate narrated response
-                        # narrated_response_path = generate_speech_from_text(response, uploaded_voice_clip)
-                        # if narrated_response_path:
-                        #     st.audio(narrated_response_path, format="audio/mp3")
+                        narrated_response_path = generate_speech_from_text(response, uploaded_voice_clip)
+                        if narrated_response_path:
+                            st.audio(narrated_response_path, format="audio/mp3")
                     else:
                         st.warning("Please enter a query.")
 
@@ -161,17 +161,17 @@ def main():
                     st.success("Voice message uploaded successfully!")
 
                     # user_query = transcribe_audio(uploaded_audio)
-                    # if user_query:
-                    #     relevant_chunks = retrieve_relevant_chunks(user_query, text_chunks, faiss_index, embedding_model)
-                    #     context = " ".join(relevant_chunks)
-                    #     response = query_llm(user_query, context)
+                    if user_query:
+                        relevant_chunks = retrieve_relevant_chunks(user_query, text_chunks, faiss_index, embedding_model)
+                        context = " ".join(relevant_chunks)
+                        response = query_llm(user_query, context)
 
-                    #     st.markdown(f"**Assistant:** {response}")
+                        st.markdown(f"**Assistant:** {response}")
 
                         # Generate narrated response
-                        # narrated_response_path = generate_speech_from_text(response, uploaded_voice_clip)
-                        # if narrated_response_path:
-                        #     st.audio(narrated_response_path, format="audio/mp3")
+                        narrated_response_path = generate_speech_from_text(response, uploaded_voice_clip)
+                        if narrated_response_path:
+                            st.audio(narrated_response_path, format="audio/mp3")
 
 if __name__ == "__main__":
     main()
