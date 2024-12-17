@@ -1,0 +1,12 @@
+os
+tempfile
+numpy
+spacy
+openai
+streamlit
+sentence-transformers
+faiss-cpu
+git+https://github.com/openai/whisper.git
+groq
+PyPDF2
+imageio[ffmpeg]

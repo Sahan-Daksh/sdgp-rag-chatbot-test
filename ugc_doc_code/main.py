@@ -21,17 +21,17 @@ client = Groq(api_key=GROQ_API_KEY)
 PDF_PATH = "ugc_student_handbook_2023-2024.pdf"
 PROCESSED_DATA = "processed_data.json"
 
-# Model loading
+# Load models
 @st.cache_resource
 def load_models():
-    whisper_model = load_model("base")  # Whisper base model for voice input
-    embed_model = SentenceTransformer("all-MiniLM-L6-v2")  # SentenceTransformer for embeddings
-    spacy_model = spacy.load("en_core_web_sm")  # Spacy for NER
+    whisper_model = load_model("base")
+    embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+    spacy_model = spacy.load("en_core_web_sm")
     return whisper_model, embed_model, spacy_model
 
 whisper_model, embed_model, spacy_model = load_models()
 
-# Step 1: PDF Extraction
+# PDF Text Extraction
 def extract_text_from_pdf(pdf_path):
     text = ""
     with open(pdf_path, "rb") as file:
@@ -40,66 +40,47 @@ def extract_text_from_pdf(pdf_path):
             text += page.extract_text()
     return text
 
-# Step 2: Chunking and Metadata with Spacy
+# Chunking and FAISS Indexing
 def preprocess_with_metadata(text, chunk_size=300, overlap=100):
     words = text.split()
-    chunks, metadata = [], []
-
+    chunks = []
     start = 0
     while start < len(words):
-        chunk = " ".join(words[start:start + chunk_size])
-        chunks.append(chunk)
-
-        # Metadata extraction using Spacy
-        doc = spacy_model(chunk)
-        keywords = list(set(ent.text for ent in doc.ents))
-        metadata.append({"chunk_text": chunk, "keywords": keywords})
-
+        chunks.append(" ".join(words[start:start + chunk_size]))
         start += chunk_size - overlap
-    return chunks, metadata
+    return chunks
 
-# Step 3: FAISS Index Creation
 def generate_faiss_index(chunks):
     embeddings = embed_model.encode(chunks, show_progress_bar=True)
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(np.array(embeddings))
     return index, embeddings
 
-# Save preprocessed data
-def save_processed_data(chunks, metadata, embeddings, file_path):
-    data = {"chunks": chunks, "metadata": metadata, "embeddings": embeddings.tolist()}
-    with open(file_path, "w", encoding="utf-8") as file:
-        json.dump(data, file)
+def load_or_create_index():
+    if os.path.exists(PROCESSED_DATA):
+        with open(PROCESSED_DATA, "r", encoding="utf-8") as file:
+            data = json.load(file)
+        chunks = data["chunks"]
+        embeddings = np.array(data["embeddings"])
+        index = faiss.IndexFlatL2(embeddings.shape[1])
+        index.add(embeddings)
+        return chunks, index
+    else:
+        raw_text = extract_text_from_pdf(PDF_PATH)
+        chunks = preprocess_with_metadata(raw_text)
+        index, embeddings = generate_faiss_index(chunks)
+        with open(PROCESSED_DATA, "w", encoding="utf-8") as file:
+            json.dump({"chunks": chunks, "embeddings": embeddings.tolist()}, file)
+        return chunks, index
 
-# Load preprocessed data
-def load_preprocessed_data(file_path):
-    with open(file_path, "r", encoding="utf-8") as file:
-        data = json.load(file)
-    chunks = data["chunks"]
-    embeddings = np.array(data["embeddings"])
-    metadata = data["metadata"]
-    index = faiss.IndexFlatL2(embeddings.shape[1])
-    index.add(embeddings)
-    return chunks, metadata, index
-
-# Retrieve relevant chunks
 def retrieve_relevant_chunks(query, chunks, index, k=3):
     query_embedding = embed_model.encode([query])
-    distances, indices = index.search(np.array(query_embedding), k=k)
+    distances, indices = index.search(query_embedding, k)
     return [chunks[i] for i in indices[0]]
 
-# Query OpenAI for Enrichment
-def enrich_with_openai(chunk):
-    prompt = f"Organize the following text and make it more coherent:\n{chunk}"
-    response = openai.Completion.create(
-        model="text-davinci-003", prompt=prompt, max_tokens=200, temperature=0.3
-    )
-    return response.choices[0].text.strip()
-
-# Query the Groq LLM
-def query_llm_groq(query, context):
+def query_groq_llm(query, context):
     messages = [
-        {"role": "system", "content": "You are a helpful assistant that uses the provided context to answer questions."},
+        {"role": "system", "content": "You are a helpful assistant."},
         {"role": "assistant", "content": context},
         {"role": "user", "content": query},
     ]
@@ -108,62 +89,83 @@ def query_llm_groq(query, context):
     )
     return response.choices[0].message.content
 
-# Preprocess the PDF if not already done
-if not os.path.exists(PROCESSED_DATA):
-    with st.spinner("Preprocessing PDF... This might take a moment."):
-        raw_text = extract_text_from_pdf(PDF_PATH)
-        chunks, metadata = preprocess_with_metadata(raw_text)
-        faiss_index, embeddings = generate_faiss_index([meta['chunk_text'] for meta in metadata])
-        save_processed_data([meta['chunk_text'] for meta in metadata], metadata, embeddings, PROCESSED_DATA)
-else:
-    chunks, metadata, faiss_index = load_preprocessed_data(PROCESSED_DATA)
+# Load FAISS index
+chunks, faiss_index = load_or_create_index()
 
-# Streamlit App UI
-st.title("Enhanced RAG Assistant: Text and Voice Queries")
-st.sidebar.title("Select Input Mode")
+# Streamlit UI
+st.title("University Admission Assistant")
+st.sidebar.title("Query Options")
+mode = st.sidebar.radio("Select Mode", ["Text Input", "Voice Input", "Selection Mode"])
 
-# Sidebar choice
-query_mode = st.sidebar.radio("Choose Query Mode", ["Voice Input", "Text Input"])
-
-# Voice Query Mode
-if query_mode == "Voice Input":
-    st.header("Voice Query")
-    uploaded_audio = st.file_uploader("Upload an audio file (wav/mp3)", type=["wav", "mp3"])
-
-    if uploaded_audio:
-        # Save temp file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
-            temp_audio.write(uploaded_audio.read())
-            audio_path = temp_audio.name
-        
-        st.audio(audio_path, format="audio/wav")
-
-        with st.spinner("Transcribing audio..."):
-            transcription = whisper_model.transcribe(audio_path).get("text", "")
-        os.remove(audio_path)
-
-        if transcription:
-            st.success("Transcription:")
-            st.write(transcription)
-
-            with st.spinner("Retrieving relevant content..."):
-                relevant_chunks = retrieve_relevant_chunks(transcription, chunks, faiss_index)
-                context = "\n".join(relevant_chunks)
-
-            response = query_llm_groq(transcription, context)
-            st.subheader("Assistant Response:")
-            st.write(response)
-
-# Text Query Mode
-if query_mode == "Text Input":
+# Text Input Mode
+if mode == "Text Input":
     st.header("Text Query")
     query = st.text_input("Enter your query:")
     if st.button("Submit"):
         if query:
-            with st.spinner("Retrieving relevant content..."):
+            with st.spinner("Retrieving content..."):
                 relevant_chunks = retrieve_relevant_chunks(query, chunks, faiss_index)
                 context = "\n".join(relevant_chunks)
-
-            response = query_llm_groq(query, context)
-            st.subheader("Assistant Response:")
+                response = query_groq_llm(query, context)
+            st.subheader("Assistant Response")
             st.write(response)
+
+# Voice Input Mode
+elif mode == "Voice Input":
+    st.header("Voice Query")
+    uploaded_audio = st.file_uploader("Upload an audio file", type=["wav", "mp3"])
+    if uploaded_audio:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            tmp.write(uploaded_audio.read())
+            audio_path = tmp.name
+        st.audio(audio_path)
+        with st.spinner("Transcribing audio..."):
+            transcription = whisper_model.transcribe(audio_path)["text"]
+        os.remove(audio_path)
+        st.success("Transcription:")
+        st.write(transcription)
+        if st.button("Submit Query"):
+            with st.spinner("Retrieving content..."):
+                relevant_chunks = retrieve_relevant_chunks(transcription, chunks, faiss_index)
+                context = "\n".join(relevant_chunks)
+                response = query_groq_llm(transcription, context)
+            st.subheader("Assistant Response")
+            st.write(response)
+
+# Selection Mode (Form-based Query)
+elif mode == "Selection Mode":
+    st.header("Selection-Based Query")
+    z_score = st.text_input("Enter your Z-Score:")
+    subject_stream = st.selectbox("Select your subject stream:", ["Science", "Commerce", "Arts"])
+    st.subheader("G.C.E. (A/L) Subjects and Grades")
+    subjects_grades = []
+    for i in range(3):  # Collect 3 subjects
+        subject = st.text_input(f"Subject {i+1}", key=f"subject_{i}")
+        grade = st.selectbox(f"Grade for Subject {i+1}", ["A", "B", "C", "S", "F"], key=f"grade_{i}")
+        if subject:  # Only append if subject is entered
+            subjects_grades.append(f"{subject} - {grade}")
+    preferred_courses = st.text_area("Preferred Courses of Study (comma-separated):")
+    district = st.text_input("Enter your district:")
+
+    if st.button("Submit Form"):
+        # Generate query from form inputs
+        query = f"""
+        Find details about university admissions for a candidate with the following criteria:
+
+        Z-Score: {z_score},  
+        G.C.E. (Advanced Level) Subjects and Grades:
+        {', '.join(subjects_grades)},
+        Preferred Courses of Study: {preferred_courses},  
+        District: {district}.  
+
+        List the eligible courses of study, minimum entry requirements, applicable cut-off marks, and any district quota information for the specified criteria.
+        """
+        # st.subheader("Generated Query")
+        # st.write(query)
+
+        with st.spinner("Retrieving content..."):
+            relevant_chunks = retrieve_relevant_chunks(query, chunks, faiss_index)
+            context = "\n".join(relevant_chunks)
+            response = query_groq_llm(query, context)
+        st.subheader("Assistant Response")
+        st.write(response)
