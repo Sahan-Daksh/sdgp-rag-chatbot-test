@@ -1,6 +1,6 @@
 streamlit
 sentence-transformers
 faiss-cpu
-whisper
+git+https://github.com/openai/whisper.git
 groq
 PyPDF2
