@@ -66,7 +66,8 @@ def preprocess_pdf_once(pdf_path):
     return text_chunks, index
 
 # Preprocess the built-in PDF (done for both Text and Voice modes)
-text_chunks, faiss_index = preprocess_pdf_once(BUILT_IN_PDF)  # Now available globally
+text_chunks, faiss_index, embed_model = preprocess_pdf_once(BUILT_IN_PDF)
+  # Now available globally
 
 # Query handler using Groq with Llama
 def query_handler_groq(query, context):
