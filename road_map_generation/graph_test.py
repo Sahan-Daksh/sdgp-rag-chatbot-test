@@ -1,16 +1,34 @@
 import streamlit as st
 from huggingface_hub import InferenceClient
 from groq import Groq
+import os
+from dotenv import load_dotenv
 
-# API setup
-GROQ_API_KEY = "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"
+# Load environment variables
+load_dotenv()
+
+# Secure API setup
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+HF_API_KEY = os.getenv('HF_API_KEY')
+
+if not GROQ_API_KEY or not HF_API_KEY:
+    st.error("Missing API keys. Please set GROQ_API_KEY and HF_API_KEY in .env file")
+    st.stop()
+
 groq_client = Groq(api_key=GROQ_API_KEY)
-hf_client = InferenceClient(api_key="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")
+hf_client = InferenceClient(api_key=HF_API_KEY)
 
 def get_roadmap_prompt(career):
     messages = [
-        {"role": "system", "content": "You are a career guidance expert. Create detailed visual roadmap descriptions."},
-        {"role": "user", "content": f"Create a detailed prompt to generate a visual career roadmap for {career}. Include education path, key skills, certifications, and career progression milestones. Format it as a journey-based visualization."}
+        {"role": "system", "content": """You are an expert career guidance counselor specialized in creating visual roadmap descriptions.
+        Format your response as a clear step-by-step journey that can be visualized."""},
+        {"role": "user", "content": f"""Create a detailed prompt for a visual roadmap showing the journey to become a {career}.
+        Include:
+        - Required education and degrees
+        - Essential skills and certifications
+        - Career progression steps
+        - Major milestones
+        Format as a journey flowing from left to right with clear progression points."""}
     ]
     response = groq_client.chat.completions.create(
         model="llama3-8b-8192",
