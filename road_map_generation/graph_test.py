@@ -1,34 +1,46 @@
 import streamlit as st
-import requests
-from PIL import Image
-from io import BytesIO
+from huggingface_hub import InferenceClient
+from groq import Groq
 
-# Replace <ngrok_url> with the actual Ngrok URL from Colab
-NGROK_URL = "https://2187-34-16-168-159.ngrok-free.app/"
+# API setup
+GROQ_API_KEY = "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"
+groq_client = Groq(api_key=GROQ_API_KEY)
+hf_client = InferenceClient(api_key="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")
 
-st.title("Dream Career Roadmap Generator")
-st.write("Enter your dream career, and we will generate a roadmap from zero to hero!")
+def get_roadmap_prompt(career):
+    messages = [
+        {"role": "system", "content": "You are a career guidance expert. Create detailed visual roadmap descriptions."},
+        {"role": "user", "content": f"Create a detailed prompt to generate a visual career roadmap for {career}. Include education path, key skills, certifications, and career progression milestones. Format it as a journey-based visualization."}
+    ]
+    response = groq_client.chat.completions.create(
+        model="llama3-8b-8192",
+        messages=messages,
+        temperature=0.7,
+        max_tokens=512
+    )
+    return response.choices[0].message.content
 
-# Input field for dream career
-dream_career = st.text_input("Your Dream Career", "")
+st.title("Career Roadmap Generator")
+dream_career = st.text_input("Enter your dream career:")
 
 if st.button("Generate Roadmap"):
     if dream_career:
         with st.spinner("Generating your career roadmap..."):
             try:
-                # Send a POST request to the Colab server
-                response = requests.post(f"{NGROK_URL}/generate", json={"dream_career": dream_career})
+                # Get detailed prompt from LLM
+                detailed_prompt = get_roadmap_prompt(dream_career)
+                st.write("Generated Prompt:", detailed_prompt)
 
-                if response.status_code == 200:
-                    # Load and display the image
-                    image = Image.open(BytesIO(response.content))
-                    st.image(image, caption=f"Roadmap for: {dream_career}", use_column_width=True)
+                # Generate image using the detailed prompt
+                image = hf_client.text_to_image(
+                    detailed_prompt,
+                    model="black-forest-labs/FLUX.1-dev"
+                )
 
-                    # Save the image locally (optional)
-                    image.save("generated_roadmap.png")
-                    st.success("Image saved as generated_roadmap.png")
-                else:
-                    st.error(f"Error: {response.json().get('error', 'Unknown error occurred')}")
+                # Display results
+                st.image(image, caption=f"Roadmap for: {dream_career}", use_column_width=True)
+                image.save("generated_roadmap.png")
+                st.success("Roadmap generated and saved!")
 
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")

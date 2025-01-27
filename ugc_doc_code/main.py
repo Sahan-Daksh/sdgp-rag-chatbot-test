@@ -12,7 +12,7 @@ import json
 import openai
 
 # API Keys
-GROQ_API_KEY = "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"  # Replace with your Groq API key
+GROQ_API_KEY = "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"  # Replace with your Groq API key
 OPENAI_API_KEY = "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"  # Replace with your OpenAI key
 openai.api_key = OPENAI_API_KEY
 client = Groq(api_key=GROQ_API_KEY)
