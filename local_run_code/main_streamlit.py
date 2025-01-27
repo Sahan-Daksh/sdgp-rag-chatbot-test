@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv
 import streamlit as st
 import tempfile
 from sentence_transformers import SentenceTransformer
@@ -15,7 +16,7 @@ st.title("Smart Assistant: Voice & Text-Based Queries")
 st.sidebar.title("Options")
 
 # API Key for Groq
-GROQ_API_KEY = "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"  # Replace with your Groq API key
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 client = Groq(api_key=GROQ_API_KEY)
 
 # Add a toggle switch to choose between Voice and Text mode

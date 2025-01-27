@@ -58,10 +58,9 @@ import sys
 from groq import Groq
 
 # Initialize the Groq client
-client = Groq(
-    api_key="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"
-)
-
+# API Key for Groq
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+client = Groq(api_key=GROQ_API_KEY)
 # Specify the path to the audio file
 filename = "./aud3.mp3"
 

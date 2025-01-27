@@ -1,8 +1,8 @@
 from huggingface_hub import InferenceClient
 
-client = InferenceClient(
-	api_key="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"
-)
+# API Key for Groq
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+client = Groq(api_key=GROQ_API_KEY)
 
 # output is a PIL.Image object
 image = client.text_to_image(
